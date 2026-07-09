@@ -1,0 +1,39 @@
+{
+  "latex-workshop.latex.recipe.default": "latexmk",
+  "latex-workshop.latex.tools": [
+    {
+      "name": "latexmk",
+      "command": "latexmk",
+      "args": [
+        "-pdf",
+        "-shell-escape",
+        "-interaction=nonstopmode",
+        "%DOC%"
+      ]
+    }
+  ],
+  "latex-workshop.latex.recipes": [
+    {
+      "name": "latexmk",
+      "tools": ["latexmk"]
+    }
+  ],
+  "latex-workshop.view.pdf.viewer": "tab",
+  "[latex]": {
+    "editor.formatOnSave": false,
+    "editor.wordWrap": "on"
+  },
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.autopep8",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 4
+  },
+  "python.linting.enabled": true,
+  "python.linting.pylintEnabled": true,
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.aux": true,
+    "**/*.log": true,
+    "**/*.out": true
+  }
+}

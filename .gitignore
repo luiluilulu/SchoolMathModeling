@@ -1,0 +1,62 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+*.pkl
+*.joblib
+
+# === Jupyter ===
+.ipynb_checkpoints/
+*.ipynb
+profile_default/
+ipython_config.py
+
+# === LaTeX ===
+*.aux
+*.log
+*.out
+*.toc
+*.bbl
+*.blg
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+*.xdv
+*.run.xml
+*.bcf
+*-blx.bib
+*.nav
+*.snm
+*.vrb
+
+# === OS / Editor ===
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+
+# === 数学建模产出 ===
+# 大文件结果暂不追踪，跑完确认后手动 add
+output/results/*.csv
+!output/results/submission_final.csv
+output_test/
+
+# === 附件大文件 ===
+# attachment6_window_raw_samples.csv ~9MB, 建议 Git LFS 或直接不追踪
+# A题/problem/attachment6_window_raw_samples.csv
+
+# === 临时/调试文件 ===
+tmp/
+temp/
+*.tmp
+debug_*
