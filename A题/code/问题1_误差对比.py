@@ -72,15 +72,13 @@ def plot_comparison(summary, by_flow):
     colors = ["#2c7bb6", "#d7191c", "#fdae61", "#5e3c99"]
 
     mae_vals = [summary.loc[summary["method"] == m, "mae_pct"].values[0] for m in methods]
-    bars = ax1.bar(labels, mae_vals, color=colors, edgecolor="white", linewidth=0.8)
+    bars = ax1.bar(labels, mae_vals, color=colors, edgecolor="none", width=0.6)
     ax1.set_ylabel("平均绝对误差（%）")
     ax1.set_title("全窗口平均绝对误差")
-    ax1.text(0.98, 0.92, r"$\mathrm{MAE}=\frac{1}{n}\sum_{i=1}^{n}\left|\frac{\hat{V}_i-V_i^{\mathrm{std}}}{V_i^{\mathrm{std}}}\times100\%\right|$",
-             transform=ax1.transAxes, ha="right", va="top", fontsize=8,
-             bbox=dict(boxstyle="round,pad=0.3", facecolor="lightyellow", alpha=0.8))
+    ax1.set_ylim(0, max(mae_vals) * 1.15)
     for bar, val in zip(bars, mae_vals):
-        ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.02,
-                 f"{val:.3f}%", ha="center", fontsize=9)
+        ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.01,
+                 f"{val:.3f}%", ha="center", va="bottom", fontsize=9)
 
     for name, color, label in zip(methods, colors, labels):
         sub = by_flow[by_flow["method"] == name]
