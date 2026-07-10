@@ -19,11 +19,10 @@ A题/
 │   ├── attachment7_meter_geometry.csv        # 仪表几何与声道参数
 │   └── sample_submission_phys6.csv           # 样例提交文件
 │
-├── code/                        # 建模 & 求解代码
+├── code/                        # 求解代码
 │   ├── evaluate_submission.py                # 官方评价脚本
-│   ├── eda/                   # 数据探索与可视化
-│   ├── model/                 # 模型实现
-│   └── utils/                 # 工具函数
+│   ├── 问题X_xxx.py            # 各题求解脚本
+│   └── utils/                  # 公用工具
 │
 ├── output/                      # 中间产出
 │   ├── figures/               # 图表
