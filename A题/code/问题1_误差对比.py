@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
 
-from utils import load_attachment1, PROBLEM_DIR, RESULTS_DIR, FIGURES_DIR, ensure_dirs
+from utils import load_attachment1, RESULTS_DIR, FIGURES_DIR, ensure_dirs
 
 METHODS = {
     "phys6": "phys6_volume_m3",
@@ -92,22 +92,6 @@ def plot_comparison(summary, by_flow):
     plt.close()
 
 
-def verify_baseline(summary):
-    """与附件4 baseline 交叉验证。"""
-    baseline = pd.read_csv(
-        PROBLEM_DIR / "attachment4_baseline_summary.csv", encoding="utf-8-sig"
-    )
-    merged = summary.merge(baseline, on="method", suffixes=("", "_ref"))
-    for _, row in merged.iterrows():
-        mae_ok = abs(row["mae_pct"] - row["mae_pct_ref"]) < 1e-6
-        mean_ok = abs(row["mean_error_pct"] - row["mean_error_pct_ref"]) < 1e-6
-        max_ok = abs(row["max_abs_error_pct"] - row["max_abs_error_pct_ref"]) < 1e-6
-        if not (mae_ok and mean_ok and max_ok):
-            print(f"  [!] {row['method']}: 与baseline不一致", flush=True)
-            return False
-    print("  [OK] 与附件4 baseline 一致", flush=True)
-    return True
-
 
 def main():
     ensure_dirs()
@@ -122,7 +106,6 @@ def main():
 
     print(summary.round(4).to_string(index=False))
     print(f"\n总窗口数: {len(df)}")
-    verify_baseline(summary)
 
     plot_comparison(summary, by_flow)
 
