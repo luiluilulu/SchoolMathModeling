@@ -62,7 +62,10 @@ def by_flow_table(errors):
 
 
 def plot_comparison(summary, by_flow):
-    """全窗口 MAE 柱状 + 分流量点 MAE 折线。"""
+    """全窗口平均绝对误差柱状 + 分流量点折线。"""
+    plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "DejaVu Sans"]
+    plt.rcParams["axes.unicode_minus"] = False
+
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
     methods = list(METHODS.keys())
     labels = ["Phys6", "OWICS", "Lagrange", "等权"]
@@ -70,8 +73,8 @@ def plot_comparison(summary, by_flow):
 
     mae_vals = [summary.loc[summary["method"] == m, "mae_pct"].values[0] for m in methods]
     bars = ax1.bar(labels, mae_vals, color=colors, edgecolor="white", linewidth=0.8)
-    ax1.set_ylabel("MAE (%)")
-    ax1.set_title("全窗口 MAE 对比")
+    ax1.set_ylabel("平均绝对误差（%）")
+    ax1.set_title("全窗口平均绝对误差")
     for bar, val in zip(bars, mae_vals):
         ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.02,
                  f"{val:.3f}%", ha="center", fontsize=9)
@@ -80,8 +83,8 @@ def plot_comparison(summary, by_flow):
         sub = by_flow[by_flow["method"] == name]
         ax2.plot(sub["flow_point"], sub["mae_pct"], "o-", color=color, label=label, linewidth=1.8)
     ax2.set_xlabel("流量点")
-    ax2.set_ylabel("MAE (%)")
-    ax2.set_title("各流量点 MAE")
+    ax2.set_ylabel("平均绝对误差（%）")
+    ax2.set_title("各流量点平均绝对误差")
     ax2.legend(fontsize=8)
 
     plt.tight_layout()
