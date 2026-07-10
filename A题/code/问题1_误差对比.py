@@ -75,6 +75,9 @@ def plot_comparison(summary, by_flow):
     bars = ax1.bar(labels, mae_vals, color=colors, edgecolor="white", linewidth=0.8)
     ax1.set_ylabel("平均绝对误差（%）")
     ax1.set_title("全窗口平均绝对误差")
+    ax1.text(0.98, 0.92, r"$\mathrm{MAE}=\frac{1}{n}\sum_{i=1}^{n}\left|\frac{\hat{V}_i-V_i^{\mathrm{std}}}{V_i^{\mathrm{std}}}\times100\%\right|$",
+             transform=ax1.transAxes, ha="right", va="top", fontsize=8,
+             bbox=dict(boxstyle="round,pad=0.3", facecolor="lightyellow", alpha=0.8))
     for bar, val in zip(bars, mae_vals):
         ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.02,
                  f"{val:.3f}%", ha="center", fontsize=9)
