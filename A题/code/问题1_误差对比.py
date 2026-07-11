@@ -4,6 +4,7 @@
 输出：output/results/problem1_error_summary.csv, output/figures/problem1_comparison.png
 """
 
+import numpy as np
 import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
@@ -93,9 +94,27 @@ def plot_comparison(summary, by_flow):
 
 
 
+CHORD_COLS = ["chord0", "chord1", "chord2", "chord3", "chord4"]
+W_PHYS6 = np.array([0.209874, 0.153223, 0.266827, 0.153223, 0.209874])
+AREA = 0.13138219017128852
+
+
+def verify_model_formula(df):
+    """验证 volume = duration × area × Σ(w·chord) 与附件1 phys6_volume_m3 一致。"""
+    rate = df[CHORD_COLS].astype(float).values @ W_PHYS6
+    computed = df["duration_s"].astype(float).values * AREA * rate
+    ref = df["phys6_volume_m3"].astype(float).values
+    diff = np.abs(computed - ref)
+    print(f"\n模型公式验证: vol = A × T × Σ(w·chord)")
+    print(f"  与 phys6_volume_m3 最大差异: {diff.max():.2e} m³")
+    if diff.max() < 1e-6:
+        print("  [OK] 公式正确，与附件1一致")
+
+
 def main():
     ensure_dirs()
     df = load_attachment1()
+    verify_model_formula(df)
     errors = calc_errors(df)
 
     summary = summary_table(errors)
