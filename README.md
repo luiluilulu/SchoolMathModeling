@@ -21,9 +21,6 @@
 │   ├── paper/                  #   论文手产出（LaTeX 工程）
 │   └── README.md
 │
-├── B题/                        # B题：高精度非圆曲线磨削
-│   └── ...（同上结构）
-│
 ├── refs/                       # 共享参考文献 / 资料
 ├── .gitignore
 └── README.md
@@ -66,7 +63,7 @@ git checkout -b paper    # 写作手
 # 克隆后安装依赖
 pip install numpy scipy pandas matplotlib
 
-# 运行评价脚本（以 A 题为例）
+# 运行评价脚本
 cd A题/code
 python ../problem/evaluate_submission.py ../problem/sample_submission_phys6.csv --output-dir ../output/results
 ```

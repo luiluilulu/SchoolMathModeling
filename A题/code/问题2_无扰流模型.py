@@ -34,8 +34,8 @@ def cv_weights(df, alphas=(0.01, 0.1, 1, 10, 100)):
     logo = LeaveOneGroupOut()
     dates = df["date"].values
     X, y = build_xy(df)
-    best_alpha, best_mae = None, float("inf")
-    best_w = None
+    best_alpha, best_mae = alphas[0], float("inf")
+    best_w, best_intercept = np.zeros(5), 0.0
 
     for alpha in alphas:
         pred = np.zeros(len(y))
