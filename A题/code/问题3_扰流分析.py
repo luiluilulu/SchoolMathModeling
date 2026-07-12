@@ -11,6 +11,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy.cluster.hierarchy import linkage, fcluster
 from sklearn.metrics import silhouette_score
+from sklearn.decomposition import PCA
 
 plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
@@ -44,32 +45,47 @@ def feature_discrimination(df):
 
 
 def cluster_disturbances(df):
-    """子问题(2)：D1–D8 Ward 层次聚类。"""
+    """子问题(2)：D1–D8 Ward 层次聚类 (10D特征→PCA→聚类)。"""
+    chord_cols = ["chord0", "chord1", "chord2", "chord3", "chord4"]
+    ab_cols = ["ab0", "ab1", "ab2", "ab3", "ab4"]
     d0 = df[df["disturbance_id"] == "D0"]
-    d0_mean = d0[["profile_swirl", "profile_ab_abs", "profile_edge_inner",
-                   "profile_center_all", "profile_top_bottom"]].mean()
-    d0_std = d0[["profile_swirl", "profile_ab_abs", "profile_edge_inner",
-                  "profile_center_all", "profile_top_bottom"]].std()
 
-    feats = ["profile_swirl", "profile_ab_abs", "profile_edge_inner",
-             "profile_center_all", "profile_top_bottom"]
-    data, labels = [], []
+    # 逐窗口归一化chord + ab + swirl + ab_abs
+    def extract_feats(sub):
+        cs = sub[chord_cols].sum(axis=1).values
+        norm_c = sub[chord_cols].values / (cs[:, None] + 1e-10)
+        return np.hstack([norm_c, sub[ab_cols].values,
+                          sub["profile_swirl"].values.reshape(-1, 1),
+                          sub["profile_ab_abs"].values.reshape(-1, 1)])
+
+    d0_feats = extract_feats(d0)
+    feat_mean = d0_feats.mean(axis=0)
+    feat_std = d0_feats.std(axis=0) + 1e-10
+
+    data, labels_list = [], []
     for d in DIST_LIST:
         sub = df[df["disturbance_id"] == d]
-        vec = (sub[feats].mean() - d0_mean) / (d0_std + 1e-10)
-        data.append(vec.values)
-        labels.append(d)
+        vec = (extract_feats(sub).mean(axis=0) - feat_mean) / feat_std
+        data.append(vec)
+        labels_list.append(d)
 
     X = np.array(data)
-    Z = linkage(X, method="ward")
+    pca = PCA(0.90).fit(X)
+    X_pca = pca.transform(X)
+    print(f"  PCA: {X.shape[1]}维 → {X_pca.shape[1]}维, 解释方差={pca.explained_variance_ratio_.sum():.1%}")
+
+    Z = linkage(X_pca, method="ward")
     best_k, best_s = 2, -1
-    for k in range(2, 6):
+    for k in range(2, min(6, len(DIST_LIST) + 1)):
         cl = fcluster(Z, k, criterion="maxclust")
-        s = silhouette_score(X, cl)
-        print(f"  K={k}: 轮廓系数={s:.3f}  分组={list(zip(labels, cl))}")
+        s = silhouette_score(X_pca, cl)
+        groups = {}
+        for i, lab in enumerate(labels_list):
+            groups.setdefault(cl[i], []).append(lab)
+        print(f"  K={k}: 轮廓系数={s:.3f}  {list(groups.values())}")
         if s > best_s:
             best_k, best_s = k, s
-    return best_k, best_s, X, labels, Z
+    return best_k, best_s, X_pca, labels_list, Z
 
 
 def plot_discrimination(stats):
