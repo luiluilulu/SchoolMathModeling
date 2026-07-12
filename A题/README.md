@@ -4,52 +4,51 @@
 
 ```
 A题/
-├── analysis/                   # 建模手产出（模型分析、公式推导）
-│   ├── 题目分析报告.md
+├── analysis/                    # 建模手产出
+│   ├── 问题1_题目分析报告.md
+│   ├── 问题2_题目分析报告.md
 │   └── 术语表格.md
-├── problem/                    # 原始赛题材料（只读）
-│   ├── A题_扰流条件下的超声波流量计.pdf       # 赛题题面
-│   ├── A题_扰流条件下的超声波流量计.tex       # 题面 LaTeX 源文件
-│   ├── attachment1_window_data.csv           # 窗口级主数据
-│   ├── attachment2_condition_schedule.csv    # 测试日期与扰流状态
-│   ├── attachment3_data_dictionary.csv       # 字段说明
-│   ├── attachment4_baseline_summary.csv      # 基础方法误差统计
-│   ├── attachment5_inspection_targets.csv    # 评价指标说明
-│   ├── attachment6_window_raw_samples.csv    # 窗口级原始声道观测（～9MB）
-│   ├── attachment7_meter_geometry.csv        # 仪表几何与声道参数
-│   └── sample_submission_phys6.csv           # 样例提交文件
 │
-├── code/                        # 求解代码
-│   ├── evaluate_submission.py                # 官方评价脚本
-│   ├── 问题X_xxx.py            # 各题求解脚本
-│   └── utils/                  # 公用工具
+├── code/                        # 编程手产出
+│   ├── evaluate_submission.py   # 官方评价脚本
+│   ├── 问题1_误差对比.py
+│   ├── 问题2_无扰流模型.py
+│   └── utils/                   # 路径、数据加载
 │
-├── output/                      # 中间产出
-│   ├── figures/               # 图表
-│   └── results/               # 结果 CSV
+├── output/                      # 图表 + 结果
+│   ├── figures/
+│   └── results/
 │
-├── paper/                       # 论文工程
-│   ├── main.tex               # 主文件
-│   ├── sections/              # 各章节 tex
-│   │   ├── 01_problem_analysis.tex
-│   │   ├── 02_model.tex
-│   │   ├── 03_solution.tex
-│   │   ├── 04_results.tex
-│   │   └── 05_conclusion.tex
-│   ├── figures/               # 论文插图
-│   └── ref.bib                # 参考文献
+├── paper/                       # 写作手产出
+│   ├── main.tex
+│   ├── sections/
+│   ├── ref.bib
+│   └── 写作模板.md
+│
+├── problem/                     # 原始赛题材料（只读）
+│   ├── attachment1~7
+│   └── sample_submission_phys6.csv
 │
 └── README.md
+```
+
+## 运行
+
+```bash
+cd A题/code
+
+# 问题1：四方法误差对比
+python 问题1_误差对比.py
+
+# 问题2：Gauss-Jacobi 零参数模型
+python 问题2_无扰流模型.py
+
+# 官方评价
+python evaluate_submission.py ../output/results/problem2_results.csv --output-dir ../output/results/eval
 ```
 
 ## 提交格式
 
 ```csv
 window_id,model_volume_m3
-```
-
-## 评价脚本
-
-```powershell
-python code/evaluate_submission.py problem/sample_submission_phys6.csv --output-dir output/results
 ```
