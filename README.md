@@ -62,8 +62,12 @@ python 问题1_误差对比.py
 # 问题2：Gauss-Jacobi 零参数模型
 python 问题2_无扰流模型.py
 
+# 问题3：扰流识别、在线分类、分流量点补偿
+python 问题3_扰流分析.py
+
 # 官方评价
 python evaluate_submission.py ../output/results/problem2_results.csv --output-dir ../output/results/eval
+python evaluate_submission.py ../output/results/problem3_zero_bias_submission.csv --output-dir ../output/results/eval_problem3_zero_bias
 ```
 
 ## 提交格式

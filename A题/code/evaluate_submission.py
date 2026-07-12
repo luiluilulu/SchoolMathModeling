@@ -9,7 +9,7 @@ import pandas as pd
 
 
 HERE = Path(__file__).resolve().parent
-DATA = HERE / "attachment1_window_data.csv"
+DATA = HERE.parent / "problem" / "attachment1_window_data.csv"
 
 
 def relative_error_pct(model_volume: pd.Series, standard_volume: pd.Series) -> pd.Series:
