@@ -47,8 +47,6 @@ Thumbs.db
 
 # === 数学建模产出 ===
 # 大文件结果暂不追踪，跑完确认后手动 add
-output/results/*.csv
-!output/results/submission_final.csv
 output_test/
 
 # === 附件大文件 ===
