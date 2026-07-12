@@ -1,3 +1,187 @@
-\section{模型建立}
+\section{模型假设与符号说明}
 
-% TODO: 数学模型推导
+\subsection{模型假设}
+
+\begin{enumerate}
+    \item 流体为不可压缩单相液体（水），流动过程中密度恒定。
+    \item 管道截面为理想圆形，等效半径 $R = 0.2045$\,m，等效截面积 $A = 0.13138$\,m$^2$（附件7提供）。
+    \item 声道安装角等效为45$^\circ$，投影因子 $\cos\theta = 1/\sqrt{2}$（附件7给出的等效投影因子）。
+    \item 流速远小于水中声速（$v \approx 3$--$5$\,m/s，$c \approx 1500$\,m/s），满足 $v \ll c$，但推导中不使用此近似。
+    \item 在无扰流条件下，流动为充分发展湍流，截面流速分布关于管轴对称，仅依赖于径向位置。
+    \item 五声道等效观测量（chord0--chord4）与各声道线平均流速成正比，比例因子在声道间一致。
+    \item 窗口持续时间内流动状态保持稳定，声道等效观测量为窗口内的有效平均值。
+\end{enumerate}
+
+\subsection{符号说明}
+
+本文使用的主要符号及其含义见表\ref{tab:symbols}。符号首次出现时给出定义，后续沿用。
+
+\begin{table}[H]
+\centering
+\caption{主要符号说明}
+\label{tab:symbols}
+\begin{tabular}{cclc}
+\toprule
+符号 & 含义 & 单位 & 来源 \\
+\midrule
+$L$ & 声道总长度 & m & 附件7 \\
+$\theta$ & 声道与管轴夹角 & rad & 等效45$^\circ$ \\
+$c$ & 流体中声速 & m/s & — \\
+$v$ & 管道轴向流速 & m/s & 待求 \\
+$t_+$, $t_-$ & 顺/逆流传播时间 & s & 附件6原始采样 \\
+$\Delta t$ & 顺逆流时间差 $t_- - t_+$ & s & 计算 \\
+$A$ & 等效管道截面积 & m$^2$ & 0.13138 \\
+$R$ & 等效管道半径 & m & 0.2045 \\
+$T$ & 窗口持续时间 & s & 附件1 duration\_s \\
+$V$ & 窗口体积 & m$^3$ & 待求 \\
+$w_i$ & 第$i$声道积分权重 & — & Gauss-Jacobi确定 \\
+$\text{chord}_i$ & 第$i$声道等效流速 & m/s 等效 & 附件1 \\
+$e_i$ & 第$i$窗口相对误差 & \% & 计算 \\
+$p_{\text{abs}}$ & AB方向不对称度总量 & — & 附件1 profile\_ab\_abs \\
+$p_{\text{swirl}}$ & 旋流代理指标 & — & 附件1 profile\_swirl \\
+$\bar{e}_g$ & 组均值误差 & \% & 同日期同流量点 \\
+$SD_g$ & 组内重复性标准差 & \% & 同日期同流量点 \\
+$u_{\text{nor},L}$ & 归一化线性度 & \% & 附件5指标 \\
+$u_{\text{nor},r}$ & 归一化重复性 & \% & 附件5指标 \\
+$u_{\text{nor},d}$ & 归一化扰流综合指标 & \% & 附件5指标 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{超声波流量计基础模型}
+
+\subsection{时差法流速测量原理}
+
+超声波流量计的核心测量原理是时差法。声波在静止水中以声速$c$传播，而水流沿管轴方向以流速$v$运动。探头固定在管壁上，声波在流动水中传播时，相对管壁的速度需叠加水流的拖曳作用。设声道长度$L$，声道与管轴夹角$\theta$，则水流速度在声道方向的分量为$v\cos\theta$。
+
+顺流传播时，声波被水流推动，相对管壁的合速度为$c + v\cos\theta$；逆流传播时，声波被水流阻挡，合速度为$c - v\cos\theta$。因此：
+
+\begin{equation}
+t_+ = \frac{L}{c + v\cos\theta}, \qquad t_- = \frac{L}{c - v\cos\theta}
+\label{eq:travel_time}
+\end{equation}
+
+声速$c$随水温变化（1480--1510\,m/s），不可视为常数。将时间差$\Delta t = t_- - t_+$通分：
+
+\begin{equation}
+\Delta t = \frac{2L v \cos\theta}{c^2 - v^2 \cos^2\theta}
+\label{eq:delta_t}
+\end{equation}
+
+顺逆流时间的乘积为：
+
+\begin{equation}
+t_+ t_- = \frac{L^2}{c^2 - v^2 \cos^2\theta}
+\label{eq:product}
+\end{equation}
+
+将式(\ref{eq:delta_t})除以式(\ref{eq:product})，含声速$c$的分母精确消去，无需任何近似：
+
+\begin{equation}
+v = \frac{L}{2\cos\theta} \cdot \frac{\Delta t}{t_+ \cdot t_-}
+\label{eq:velocity_exact}
+\end{equation}
+
+式(\ref{eq:velocity_exact})不含声速$c$，不受水温影响。本题中等效$\cos\theta = 1/\sqrt{2}$（附件7给出的投影因子，对应等效45$^\circ$安装角）。
+
+窗口持续$T$秒，面平均流速$v$，截面积$A$，体积为：
+
+\begin{equation}
+V = A \cdot v \cdot T
+\label{eq:volume}
+\end{equation}
+
+\subsection{多声道积分的必要性}
+
+管道截面流速分布不均匀：管中心流速高、管壁附近流速低。单声道仅测量该声道路径上的线平均速度，不能代表整个截面的面平均流速。需在截面不同高度布设多条声道，通过加权求和逼近面平均流量。
+
+以管口截面圆心为原点建立坐标系：$x$轴水平方向，$y$轴竖直方向（$y=+R$为管顶，$y=-R$为管底）。圆方程为$x^2+y^2=R^2$。在高度$y$处，管壁水平坐标为$x = \pm\sqrt{R^2-y^2}$，该高度的水平宽度为$2\sqrt{R^2-y^2}$。取厚度$dy$的水平细条——面积$=2\sqrt{R^2-y^2}\,dy$，流量贡献$=v(y)\cdot 2\sqrt{R^2-y^2}\,dy$。积分得体积流量：
+
+\begin{equation}
+Q = \int_{-R}^{R} v(y) \cdot 2\sqrt{R^2 - y^2} \, dy
+\label{eq:flow_integral}
+\end{equation}
+
+面平均流速$\bar{v} = Q/(\pi R^2)$。式(\ref{eq:flow_integral})是连续积分形式，实际流量计仅有$N$条声道，需用离散加权和近似：
+
+\begin{equation}
+\bar{v} \approx \sum_{i=1}^{N} w_i \cdot v_i
+\label{eq:discrete_sum}
+\end{equation}
+
+其中$v_i$为第$i$声道测量的线平均流速，$w_i$为声道积分权重。权重$w_i$的选择决定了离散求和的精度。
+
+\subsection{Gauss-Jacobi五声道加权积分}
+
+为将截面连续积分转化为离散加权和，对式(\ref{eq:flow_integral})做归一化处理。令$t = y/R$，将坐标从米无量纲化到$[-1, 1]$区间：
+
+\begin{equation}
+\bar{v} = \frac{1}{\pi} \int_{-1}^{1} v(Rt) \cdot 2\sqrt{1 - t^2} \, dt
+\label{eq:normalized}
+\end{equation}
+
+几何因子$2\sqrt{1-t^2} = 2(1-t)^{1/2}(1+t)^{1/2}$，为Gauss-Jacobi权函数$(1-t)^\alpha(1+t)^\beta$在$\alpha = \beta = 1/2$时的特例。Gauss-Jacobi数值积分将连续积分近似为$N$个离散节点的加权和\cite{zheng2015improved}：
+
+\begin{equation}
+\int_{-1}^{1} f(t) \cdot (1-t)^\alpha(1+t)^\beta \, dt \approx \sum_{i=1}^{N} w_i f(t_i)
+\label{eq:gj_quadrature}
+\end{equation}
+
+其中$f(t) = v(Rt)$为归一化高度$t$处的线平均流速。节点$t_i$（声道位置）取$N$次Jacobi多项式$P_N^{(\alpha,\beta)}(t)$的$N$个根，权重$w_i$由下式确定\cite{roman2022software}：
+
+\begin{equation}
+w_i = \frac{2^{\alpha+\beta+1}\;\Gamma(N+\alpha+1)\;\Gamma(N+\beta+1)}{N!\;\Gamma(N+\alpha+\beta+1)\;(1-t_i^2)\;[P_N^{(\alpha,\beta)\prime}(t_i)]^2}
+\label{eq:gj_weights}
+\end{equation}
+
+本题$N=5$，代入$\alpha=\beta=1/2$求解$P_5^{(1/2,1/2)}(t)=0$，得五条声道归一化高度$t = 0, \pm 0.266, \pm 0.727$（与附件7中声道位置参数一致）。将节点代入式(\ref{eq:gj_weights})得到权重。最终体积估计为五声道离散加权和：
+
+\begin{equation}
+V = A \cdot T \cdot \sum_{i=0}^{4} w_i \cdot \text{chord}_i
+\label{eq:final_model}
+\end{equation}
+
+\subsection{声道权重的物理含义}
+
+各声道权重$w_i$等于该声道所代表的环带截面积占总面积的比例。以表\ref{tab:phys6_weights}中Phys6方案的权重为例：
+
+\begin{table}[H]
+\centering
+\caption{Phys6方案五声道参数}
+\label{tab:phys6_weights}
+\begin{tabular}{ccccc}
+\toprule
+声道 & 归一化高度 $y/R$ & 权重 $w_i$ & 声道位置 & 环带特征 \\
+\midrule
+chord0 & +0.727 & 0.210 & 管顶附近 & 上边缘环带 \\
+chord1 & +0.266 & 0.153 & 偏上位置 & 内侧偏上环带 \\
+chord2 & 0.000 & 0.267 & 管道中心 & 中心环带 \\
+chord3 & -0.266 & 0.153 & 偏下位置 & 内侧偏下环带 \\
+chord4 & -0.727 & 0.210 & 管底附近 & 下边缘环带 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+边缘声道（chord0和chord4）虽靠近管壁处水平宽度窄，但环带周长长，环带面积与中心声道相当（约占21\%）。内侧声道（chord1和chord3）在半高处，环带面积最小（各约15\%）。中心声道（chord2）对应直径最宽处，环带面积最大（约27\%）。Phys6权重和$\sum w_i \approx 0.993$，不严格归一——五条声道未覆盖紧贴管壁的最边缘区域（约占总面积0.7\%），这是工程实际中探头安装位置的几何限制，非数学误差。
+
+\subsection{五套积分方案}
+
+附件7提供了五套固定声道的积分权重，附件1中已预计算对应的体积估计列。各方案特征见表\ref{tab:five_methods}。
+
+\begin{table}[H]
+\centering
+\caption{五套积分方案对比}
+\label{tab:five_methods}
+\begin{tabular}{cccc}
+\toprule
+方案 & 全称 & 权重和 & 特征 \\
+\midrule
+Phys6 & Physical 6-path Integration & 0.993 & 工程原始系数，不归一 \\
+OWICS & OWICS Integration & 1.000 & 归一化Gauss-Jacobi形式 \\
+Lagrange & Lagrange-type Integration & 1.000 & 插值型积分 \\
+等权 & Equal Weight Integration & 1.000 & 五声道简单算术平均 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+其中Phys6为工程上实际使用的物理权重，来源于Gauss-Jacobi积分但未经归一化处理；OWICS为标准Gauss-Jacobi积分（归一化形式）；Lagrange为拉格朗日插值型积分；等权为最简单的算术平均，仅作为对照基线。
