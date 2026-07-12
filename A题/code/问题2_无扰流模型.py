@@ -120,6 +120,28 @@ def plot_results(result, groups):
     plt.close()
 
 
+def leave_one_date_out(df, weights):
+    """留一日期交叉验证。
+
+    零参数模型下无需训练，逐日计算 MAE 检验跨日期稳定性。
+    """
+    dates = sorted(df["date"].unique())
+    results = []
+    for holdout in dates:
+        test = df[df["date"] == holdout]
+        pred = predict(test, weights)
+        err = (pred - test["standard_volume_m3"]) / test["standard_volume_m3"] * 100
+        results.append({
+            "holdout_date": holdout,
+            "n_windows": len(test),
+            "mae_pct": err.abs().mean(),
+            "mean_error_pct": err.mean(),
+        })
+    cv_df = pd.DataFrame(results)
+    cv_mae = cv_df["mae_pct"].mean()
+    return cv_df, cv_mae
+
+
 def main():
     ensure_dirs()
     df = load_attachment1()
@@ -158,6 +180,12 @@ def main():
     result[["window_id", "model_volume_m3"]].to_csv(
         RESULTS_DIR / "problem2_results.csv", index=False, encoding="utf-8-sig")
     groups.to_csv(RESULTS_DIR / "problem2_groups.csv", index=False, encoding="utf-8-sig")
+
+    # 留一日期验证
+    cv_df, cv_mae = leave_one_date_out(df, weights)
+    print(f"\n留一日期 CV MAE: {cv_mae:.4f}%")
+    print(cv_df.to_string(index=False))
+    cv_df.to_csv(RESULTS_DIR / "problem2_cv_by_date.csv", index=False, encoding="utf-8-sig")
 
     plot_weights(owics_w, phys6_w)
     plot_results(result, groups)
