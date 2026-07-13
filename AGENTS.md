@@ -6,11 +6,27 @@
 
 ```
 A题/
-├── analysis/    # 建模手 — 分析报告、公式推导
-├── code/        # 编程手 — 求解代码
-├── paper/       # 论文手 — LaTeX论文
-├── problem/     # 原始赛题材料（只读）
-└── output/      # 中间结果、图表
+├── analysis/              # 建模分析文档
+│   ├── A题完整建模分析.md  ← 全文整合
+│   ├── 模型框架.md         ← 数学框架+验证
+│   ├── 问题1_题目分析报告.md
+│   ├── 问题2_题目分析报告.md
+│   ├── 问题3_扰流剖面识别与补偿.md
+│   └── 术语表格.md
+├── code/                  # 求解代码
+│   ├── 问题1_误差对比.py   ← 核心管线(4个)
+│   ├── 问题2_无扰流模型.py
+│   ├── 问题3_扰流分析.py
+│   ├── nested_lodo_eta.py ← 问题4嵌套LODO
+│   ├── evaluate_submission.py
+│   ├── ablation.py        ← 实验脚本
+│   ├── compare_models_13d.py
+│   ├── dynamic_weights_v2.py
+│   ├── utils/             ← 共享工具
+│   └── experiments/       ← 归档实验
+├── paper/                 # LaTeX论文
+├── problem/               # 原始赛题材料(只读)
+└── output/                # 结果与图表
 ```
 
 以下规则适用于本项目所有AI辅助产出（代码注释、文档、论文片段），无需每次重复说明。
