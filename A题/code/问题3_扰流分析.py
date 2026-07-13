@@ -41,7 +41,7 @@ DISCRIMINATION_FEATURES = [
 
 
 def calc_base_volume(df):
-    """Phys6 基线体积，返回 ndarray."""
+    """OWICS 基线体积，返回 ndarray."""
     velocity_m_s = df[CHORD_COLS].astype(float).values @ W_OWICS
     return velocity_m_s * df["duration_s"].astype(float).values * AREA_M2
 
@@ -368,7 +368,7 @@ def evaluation_summary(df):
     """补偿前后评价汇总."""
     rows = []
     models = [
-        ("base_phys6", "base_error_pct"),
+        ("base_owics", "base_error_pct"),
         ("comp_to_d0", "model_error_pct"),
         ("comp_to_zero", "zero_bias_error_pct"),
     ]
