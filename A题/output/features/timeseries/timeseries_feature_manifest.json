@@ -1,0 +1,50 @@
+{
+  "input": {
+    "raw": "C:\\Users\\lusang\\Desktop\\SchoolMathModeling\\A题\\problem\\attachment6_window_raw_samples.csv",
+    "geometry": "C:\\Users\\lusang\\Desktop\\SchoolMathModeling\\A题\\problem\\attachment7_meter_geometry.csv",
+    "window_data": "C:\\Users\\lusang\\Desktop\\SchoolMathModeling\\A题\\problem\\attachment1_window_data.csv"
+  },
+  "n_raw_rows": 29322,
+  "n_windows_raw": 159,
+  "n_windows_attachment1": 159,
+  "n_full_features": 154,
+  "n_compact_features": 25,
+  "stage_definition": {
+    "start_fraction": 0.2,
+    "plateau_fraction": 0.6000000000000001,
+    "end_fraction": 0.2
+  },
+  "compact_features": [
+    "ts_q_cv",
+    "ts_q_mad_rel",
+    "ts_q_iqr_rel",
+    "ts_q_drift_rel",
+    "ts_q_tv_step_rel",
+    "ts_q_lag1",
+    "ts_q_start_over_plateau",
+    "ts_q_end_over_plateau",
+    "ts_q_plateau_cv",
+    "ts_q_spike_frac",
+    "ts_channel_cv_mean",
+    "ts_channel_cv_max",
+    "ts_channel_plateau_cv_mean",
+    "ts_channel_drift_abs_mean",
+    "ts_channel_tv_mean",
+    "ts_pair_corr_mean",
+    "ts_pair_corr_min",
+    "ts_diff_top_bottom_std",
+    "ts_diff_top_bottom_drift",
+    "ts_diff_inner_skew_std",
+    "ts_diff_inner_skew_drift",
+    "ts_diff_center_edge_std",
+    "ts_diff_center_edge_drift",
+    "ts_diff_alternating_std",
+    "ts_diff_alternating_drift"
+  ],
+  "notes": [
+    "特征构造不使用 standard_volume_m3。",
+    "诊断文件中的目标相关性只用于筛选，不可代替嵌套LODO评价。",
+    "优先关注 corr_within_group 与 within_variance_ratio，以判断特征能否解释组内重复性。",
+    "ts_integral_vs_phys6_pct 受附件6到chord近似映射误差影响，使用前需单独消融。"
+  ]
+}
