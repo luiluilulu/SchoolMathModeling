@@ -25,7 +25,7 @@ plt.rcParams["axes.unicode_minus"] = False
 plt.rcParams["font.size"] = 10
 
 AREA_M2 = 0.13138219017128852
-W_PHYS6 = np.array([0.209874, 0.153223, 0.266827, 0.153223, 0.209874])
+W_OWICS = np.array([0.221205, 0.112176, 0.333238, 0.112176, 0.221205])  # 问题2推导
 CHORD_COLS = [f"chord{i}" for i in range(5)]
 AB_COLS = [f"ab{i}" for i in range(5)]
 DIST_LIST = [f"D{i}" for i in range(1, 9)]
@@ -42,7 +42,7 @@ DISCRIMINATION_FEATURES = [
 
 def calc_base_volume(df):
     """Phys6 基线体积，返回 ndarray."""
-    velocity_m_s = df[CHORD_COLS].astype(float).values @ W_PHYS6
+    velocity_m_s = df[CHORD_COLS].astype(float).values @ W_OWICS
     return velocity_m_s * df["duration_s"].astype(float).values * AREA_M2
 
 
@@ -158,11 +158,11 @@ def fit_online_classifier(df, feat_mean, feat_std, pca, class_map):
     return centers, covs
 
 
-def classify_lodo(df):
-    """留一日期交叉验证在线分类。
+def classify_lodo_ab(df, cluster_map):
+    """留一日期 A/B 二分类验证（标签对齐）。
 
-    每折: 留出一天作为测试, 其余8天用于拟合 PCA + Mahalanobis 参数。
-    返回每折的正确数/总数。
+    cluster_map: {disturbance_id: "A"|"B"} 由全量数据聚类得到的地面真值。
+    每折内用训练集 profile_top_bottom 均值对齐A/B标签方向。
     """
     from sklearn.decomposition import PCA as PCA_
     dates = sorted(df["date"].unique())
@@ -171,6 +171,7 @@ def classify_lodo(df):
         train = df[df["date"] != test_date]
         test = df[df["date"] == test_date]
 
+        # 训练集: D0标准化 + PCA
         d0_train = train[train["disturbance_id"] == "D0"]
         train_feat = build_feature_matrix(train)
         if len(d0_train) > 0:
@@ -178,46 +179,69 @@ def classify_lodo(df):
             mu = d0_feat.mean(axis=0)
             sig = d0_feat.std(axis=0) + 1e-12
         else:
-            # D0全部在测试日，用训练集整体均值/标准差作为fallback
             mu = train_feat.mean(axis=0)
             sig = train_feat.std(axis=0) + 1e-12
         train_scaled = (train_feat - mu) / sig
-
-        # PCA 在训练日期上拟合
         pca = PCA_(0.90).fit(train_scaled)
         train_pc = pca.transform(train_scaled)
 
-        # 扰流窗口按 disturbance_id 分组 → 类中心
-        train_with_pc = train.copy()
-        train_with_pc["pc0"] = train_pc[:, 0]
+        # 训练集扰流窗口按 cluster_map 分组 → A/B 中心
+        dist_mask = train["disturbance_id"] != "D0"
+        dist_idx = np.where(dist_mask.values)[0]  # train内的位置索引
+        train_pc_dist = train_pc[dist_idx]
+        dist_train = train[dist_mask].copy()
+        dist_train["pc0"] = train_pc_dist[:, 0]
         if train_pc.shape[1] > 1:
-            train_with_pc["pc1"] = train_pc[:, 1]
-        dist_train = train_with_pc[train_with_pc["disturbance_id"] != "D0"]
-        class_map_train = {}
-        for did in dist_train["disturbance_id"].unique():
-            sub = dist_train[dist_train["disturbance_id"] == did]
-            pc_cols = ["pc0"] if train_pc.shape[1] == 1 else ["pc0", "pc1"]
-            class_map_train[did] = sub[pc_cols].mean().values
+            dist_train["pc1"] = train_pc_dist[:, 1]
+        pc_cols = ["pc0"] if train_pc.shape[1] == 1 else ["pc0", "pc1"]
+
+        # 按 cluster_map 计算A/B类中心
+        centers_train = {}
+        for label in ["A", "B"]:
+            subs = dist_train[dist_train["disturbance_id"].map(cluster_map) == label]
+            if len(subs) > 0:
+                centers_train[label] = subs[pc_cols].mean().values
+            else:
+                centers_train[label] = None
+
+        # 标签对齐: 用训练集 profile_top_bottom 均值确定A/B方向
+        # 若B类中心 profile_top_bottom 更大 → 交换标签
+        if centers_train["A"] is not None and centers_train["B"] is not None:
+            tb_train = train.copy()
+            tb_train["true_label"] = tb_train["disturbance_id"].map(cluster_map)
+            tb_a = tb_train[tb_train["true_label"] == "A"]["profile_top_bottom"].mean()
+            tb_b = tb_train[tb_train["true_label"] == "B"]["profile_top_bottom"].mean()
+            swap = tb_b > tb_a  # A应为上偏(正), B为下偏(负)
+        else:
+            swap = False
 
         # 测试日期预测
         test_feat = (build_feature_matrix(test) - mu) / sig
         test_pc = pca.transform(test_feat)
-        test_with_pc = test.copy()
-        test_with_pc["pc0"] = test_pc[:, 0]
-        if test_pc.shape[1] > 1:
-            test_with_pc["pc1"] = test_pc[:, 1]
-        dist_test = test_with_pc[test_with_pc["disturbance_id"] != "D0"]
+        dist_test = test[test["disturbance_id"] != "D0"].copy()
         if len(dist_test) == 0:
             results.append({"holdout_date": int(test_date), "correct": 0, "total": 0})
             continue
-        pc_cols = ["pc0"] if test_pc.shape[1] == 1 else ["pc0", "pc1"]
+        test_dist_idx = np.where((test["disturbance_id"] != "D0").values)[0]
+        test_pc_dist = test_pc[test_dist_idx]
+        dist_test["pc0"] = test_pc_dist[:, 0]
+        if test_pc.shape[1] > 1:
+            dist_test["pc1"] = test_pc_dist[:, 1]
+
         correct = 0
         for _, row in dist_test.iterrows():
             pc_vec = row[pc_cols].values
-            dists = {did: float(np.sqrt(np.sum((pc_vec - c) ** 2)))
-                     for did, c in class_map_train.items()}
+            dists = {}
+            for label in ["A", "B"]:
+                if centers_train[label] is not None:
+                    dists[label] = float(np.sqrt(np.sum((pc_vec - centers_train[label]) ** 2)))
+            if not dists:
+                continue
             pred = min(dists, key=dists.get)
-            if pred == row["disturbance_id"]:
+            if swap:
+                pred = "B" if pred == "A" else "A"
+            true_label = cluster_map.get(row["disturbance_id"], "D0")
+            if pred == true_label:
                 correct += 1
         n_test = len(dist_test)
         results.append({"holdout_date": int(test_date), "correct": correct, "total": n_test})
@@ -482,6 +506,61 @@ def write_outputs(df, stats, cluster_df, silhouette_df, params, summary):
     ).to_csv(RESULTS_DIR / "problem3_zero_bias_submission.csv", index=False, encoding="utf-8-sig")
 
 
+def compensation_lodo(df, cluster_map):
+    """留一日期补偿验证：每折用训练集计算δ，应用到测试集。
+    补偿公式: V_hat = V_base / (1 + mean_train_error_of_class_fp)
+    """
+    dates = sorted(df["date"].unique())
+    all_base_err = []
+    all_comp_err = []
+    for test_date in dates:
+        train = df[df["date"] != test_date]
+        test = df[df["date"] == test_date]
+        # 训练集上计算每类每流量点的平均相对误差
+        # e = (V_base - V_std) / V_std → V_std = V_base / (1+e)
+        # 归零补偿: V_hat = V_base / (1 + mean_e_{c,p})
+        train_e = train.copy()
+        train_e["error"] = (train_e["base_volume_m3"] - train_e["standard_volume_m3"]) \
+                           / train_e["standard_volume_m3"]
+        train_e["class"] = train_e["disturbance_id"].map(cluster_map).fillna("D0")
+        delta = train_e.groupby(["class", "flow_point"])["error"].mean()
+        # 应用到测试集
+        test_pred = test.copy()
+        test_pred["class"] = test_pred["disturbance_id"].map(cluster_map).fillna("D0")
+        for (c, fp), mean_e in delta.items():
+            mask = (test_pred["class"] == c) & (test_pred["flow_point"] == fp)
+            test_pred.loc[mask, "comp_vol"] = (
+                test_pred.loc[mask, "base_volume_m3"] / (1.0 + mean_e)
+            )
+        # 无补偿信息的组合保持base_vol
+        test_pred["comp_vol"] = test_pred["comp_vol"].fillna(test_pred["base_volume_m3"])
+        all_base_err.append(
+            (test_pred["base_volume_m3"] - test_pred["standard_volume_m3"])
+            / test_pred["standard_volume_m3"] * 100
+        )
+        all_comp_err.append(
+            (test_pred["comp_vol"] - test_pred["standard_volume_m3"])
+            / test_pred["standard_volume_m3"] * 100
+        )
+    base_err = pd.concat(all_base_err).values
+    comp_err = pd.concat(all_comp_err).values
+    # 组通过计算
+    work = df.copy()
+    err_series = pd.Series(comp_err, index=work.index)
+    work["ep"] = err_series
+    gd = []
+    for _, grp in work.groupby(["date", "flow_point"]):
+        if len(grp) < 3: continue
+        ee = grp["ep"].values
+        gd.append(abs(ee.mean()) <= 0.2 and ee.std(ddof=1) <= 0.040)
+    return {
+        "base_mae": float(np.abs(base_err).mean()),
+        "comp_mae": float(np.abs(comp_err).mean()),
+        "pass": int(sum(gd)),
+        "total": len(gd),
+    }
+
+
 def main():
     ensure_dirs()
     df = load_attachment1()
@@ -536,12 +615,20 @@ def main():
     disturbed = df[df["true_is_disturbed"]]
     print(f"在线分类正确: {int(disturbed['class_correct'].sum())}/{len(disturbed)}")
 
-    # 留一日期交叉验证分类
-    lodo_df, lodo_correct, lodo_total = classify_lodo(df)
-    print(f"\n留一日期分类验证:")
+    # 留一日期 A/B 二分类验证（标签对齐）
+    cluster_map_ab = {dist: class_map[dist] for dist in DIST_LIST}
+    lodo_df, lodo_correct, lodo_total = classify_lodo_ab(df, cluster_map_ab)
+    print(f"\n留一日期 A/B 分类验证（标签对齐后）:")
     for _, r in lodo_df.iterrows():
         print(f"  日期 {int(r['holdout_date'])}: {int(r['correct'])}/{int(r['total'])}")
     print(f"  合计: {lodo_correct}/{lodo_total}")
+
+    # 留一日期补偿验证
+    lodo_comp_results = compensation_lodo(df, cluster_map_ab)
+    print(f"\n留一日期补偿验证:")
+    print(f"  基线 MAE={lodo_comp_results['base_mae']:.4f}%  "
+          f"补偿后 MAE={lodo_comp_results['comp_mae']:.4f}%  "
+          f"组通过={lodo_comp_results['pass']}/{lodo_comp_results['total']}")
 
     print("聚类分组:")
     for class_name, group in cluster_df.groupby("online_class"):
