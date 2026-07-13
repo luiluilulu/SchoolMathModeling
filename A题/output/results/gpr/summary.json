@@ -1,0 +1,41 @@
+{
+  "plain (η=1)": {
+    "MAE": 0.13638149092145382,
+    "pass": 5,
+    "total": 30,
+    "pass_single": 3,
+    "n_single": 12,
+    "pass_mixed": 2,
+    "n_mixed": 18,
+    "u_L": 0.30857014148213235,
+    "u_r": 0.14844041536740887,
+    "u_d": 0.356372966158494,
+    "version": "plain (η=1)"
+  },
+  "fixed η (best)": {
+    "MAE": 0.14396815852335046,
+    "pass": 8,
+    "total": 30,
+    "pass_single": 3,
+    "n_single": 12,
+    "pass_mixed": 5,
+    "n_mixed": 18,
+    "u_L": 0.37461054308552183,
+    "u_r": 0.12620411450098787,
+    "u_d": 0.32147051328813503,
+    "version": "fixed η (best)"
+  },
+  "adaptive τ": {
+    "MAE": 0.15092825470900856,
+    "pass": 6,
+    "total": 30,
+    "pass_single": 1,
+    "n_single": 12,
+    "pass_mixed": 5,
+    "n_mixed": 18,
+    "u_L": 0.3986867875741266,
+    "u_r": 0.12066797348077468,
+    "u_d": 0.29872643747169925,
+    "version": "adaptive τ"
+  }
+}
