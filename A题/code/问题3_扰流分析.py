@@ -158,6 +158,76 @@ def fit_online_classifier(df, feat_mean, feat_std, pca, class_map):
     return centers, covs
 
 
+def classify_lodo(df):
+    """留一日期交叉验证在线分类。
+
+    每折: 留出一天作为测试, 其余8天用于拟合 PCA + Mahalanobis 参数。
+    返回每折的正确数/总数。
+    """
+    from sklearn.decomposition import PCA as PCA_
+    dates = sorted(df["date"].unique())
+    results = []
+    for test_date in dates:
+        train = df[df["date"] != test_date]
+        test = df[df["date"] == test_date]
+
+        d0_train = train[train["disturbance_id"] == "D0"]
+        train_feat = build_feature_matrix(train)
+        if len(d0_train) > 0:
+            d0_feat = build_feature_matrix(d0_train)
+            mu = d0_feat.mean(axis=0)
+            sig = d0_feat.std(axis=0) + 1e-12
+        else:
+            # D0全部在测试日，用训练集整体均值/标准差作为fallback
+            mu = train_feat.mean(axis=0)
+            sig = train_feat.std(axis=0) + 1e-12
+        train_scaled = (train_feat - mu) / sig
+
+        # PCA 在训练日期上拟合
+        pca = PCA_(0.90).fit(train_scaled)
+        train_pc = pca.transform(train_scaled)
+
+        # 扰流窗口按 disturbance_id 分组 → 类中心
+        train_with_pc = train.copy()
+        train_with_pc["pc0"] = train_pc[:, 0]
+        if train_pc.shape[1] > 1:
+            train_with_pc["pc1"] = train_pc[:, 1]
+        dist_train = train_with_pc[train_with_pc["disturbance_id"] != "D0"]
+        class_map_train = {}
+        for did in dist_train["disturbance_id"].unique():
+            sub = dist_train[dist_train["disturbance_id"] == did]
+            pc_cols = ["pc0"] if train_pc.shape[1] == 1 else ["pc0", "pc1"]
+            class_map_train[did] = sub[pc_cols].mean().values
+
+        # 测试日期预测
+        test_feat = (build_feature_matrix(test) - mu) / sig
+        test_pc = pca.transform(test_feat)
+        test_with_pc = test.copy()
+        test_with_pc["pc0"] = test_pc[:, 0]
+        if test_pc.shape[1] > 1:
+            test_with_pc["pc1"] = test_pc[:, 1]
+        dist_test = test_with_pc[test_with_pc["disturbance_id"] != "D0"]
+        if len(dist_test) == 0:
+            results.append({"holdout_date": int(test_date), "correct": 0, "total": 0})
+            continue
+        pc_cols = ["pc0"] if test_pc.shape[1] == 1 else ["pc0", "pc1"]
+        correct = 0
+        for _, row in dist_test.iterrows():
+            pc_vec = row[pc_cols].values
+            dists = {did: float(np.sqrt(np.sum((pc_vec - c) ** 2)))
+                     for did, c in class_map_train.items()}
+            pred = min(dists, key=dists.get)
+            if pred == row["disturbance_id"]:
+                correct += 1
+        n_test = len(dist_test)
+        results.append({"holdout_date": int(test_date), "correct": correct, "total": n_test})
+
+    results_df = pd.DataFrame(results)
+    total_correct = results_df["correct"].sum()
+    total_n = results_df["total"].sum()
+    return results_df, total_correct, total_n
+
+
 def mahalanobis_distance(row, center, cov):
     """Mahalanobis 距离."""
     diff = row - center
@@ -465,6 +535,14 @@ def main():
     print(f"扰流检测正确: {int(df['detection_correct'].sum())}/{len(df)}")
     disturbed = df[df["true_is_disturbed"]]
     print(f"在线分类正确: {int(disturbed['class_correct'].sum())}/{len(disturbed)}")
+
+    # 留一日期交叉验证分类
+    lodo_df, lodo_correct, lodo_total = classify_lodo(df)
+    print(f"\n留一日期分类验证:")
+    for _, r in lodo_df.iterrows():
+        print(f"  日期 {int(r['holdout_date'])}: {int(r['correct'])}/{int(r['total'])}")
+    print(f"  合计: {lodo_correct}/{lodo_total}")
+
     print("聚类分组:")
     for class_name, group in cluster_df.groupby("online_class"):
         print(f"  类{class_name}: {'/'.join(group['disturbance_id'])}")
