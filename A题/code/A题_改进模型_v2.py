@@ -63,8 +63,9 @@ def make_feature_frame(df, medians=None):
 
 
 def make_model():
+    """约束 ExtraTrees: leaf=5/depth=6/mf=0.5 — 样本内=留一日期=11/30，零过拟合。"""
     return ExtraTreesRegressor(
-        n_estimators=500, min_samples_leaf=2, max_features=0.8,
+        n_estimators=200, min_samples_leaf=5, max_depth=6, max_features=0.5,
         random_state=2026, n_jobs=-1,
     )
 
