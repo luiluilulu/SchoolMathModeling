@@ -29,10 +29,7 @@ FEATS = CHORD_COLS + AB_COLS + [
     "zero_rate_med", "zero_rate_mad", "zero_age_s", "base_rate_m3h", "duration_s", "flow_point",
 ]
 
-PG = [
-    {"min_samples_leaf": l, "max_depth": d, "max_features": m, "n_estimators": n}
-    for l in [3, 5] for d in [4, 6, None] for m in [0.3, 0.5] for n in [200, 300]
-]
+ET_PARAMS = {"min_samples_leaf": 5, "max_depth": 6, "max_features": 0.5, "n_estimators": 200}
 ETA_GRID = [1.0]  # 固定不收缩，确认基线
 
 df = pd.read_csv(DATA, encoding="utf-8-sig")
@@ -95,12 +92,11 @@ def inner_score(err, df_sub):
     return (gp, -gs, -gm)
 
 
-# ==== 嵌套 LODO + 每折内选 (p*, η*) ====
+# ==== 外层LODO（固定ET参数，η=1）====
 n_dates = df["date"].astype(str).nunique()
-print(f"嵌套 LODO + 折内 η 选择 ({n_dates} 个日期) ...", flush=True)
+print(f"嵌套LODO基线 ({n_dates} 日期, ET固定参数, η=1) ...", flush=True)
 outer = LeaveOneGroupOut()
 outer_pred = np.zeros(len(df))
-outer_eta = np.zeros(len(df))
 fold_info = []
 
 for of, (otr, ote) in enumerate(outer.split(df, groups=dates)):
@@ -109,82 +105,45 @@ for of, (otr, ote) in enumerate(outer.split(df, groups=dates)):
     idates = tr_o["date"].astype(str).values
     inner = LeaveOneGroupOut()
 
-    best_score = (-1, -np.inf, -np.inf)
-    best_p = None
-    best_eta = None
+    # 内层LODO获取OOF预测
+    ip = np.zeros(len(tr_o))
+    for itr, iva in inner.split(tr_o, groups=idates):
+        tri = tr_o.iloc[itr]; vai = tr_o.iloc[iva]
+        Xtr = tri[FEATS].astype(float); Xva = vai[FEATS].astype(float)
+        med = Xtr.median()
+        m = ExtraTreesRegressor(**ET_PARAMS, random_state=2026, n_jobs=-1)
+        m.fit(Xtr.fillna(med).values, tri["target"].values)
+        ip[iva] = m.predict(Xva.fillna(med).values)
 
-    for p in PG:
-        # 内层 LODO：每组参数只跑一次
-        ip = np.zeros(len(tr_o))
-        for itr, iva in inner.split(tr_o, groups=idates):
-            tri = tr_o.iloc[itr]
-            vai = tr_o.iloc[iva]
-            Xtr = tri[FEATS].astype(float)
-            Xva = vai[FEATS].astype(float)
-            med = Xtr.median()
-            m = ExtraTreesRegressor(**p, random_state=2026, n_jobs=-1)
-            m.fit(Xtr.fillna(med).values, tri["target"].values)
-            ip[iva] = m.predict(Xva.fillna(med).values)
+    inner_pass = inner_score(
+        (tr_o["base_vol"].values * np.exp(ip) - tr_o["standard_volume_m3"].values)
+        / tr_o["standard_volume_m3"].values * 100, tr_o)[0]
 
-        # η 搜索：纯数组运算
-        for eta in ETA_GRID:
-            vol = tr_o["base_vol"].values * np.exp(ip * eta)
-            err = (vol - tr_o["standard_volume_m3"].values) / tr_o["standard_volume_m3"].values * 100.0
-            sc = inner_score(err, tr_o)
-            if sc > best_score:
-                best_score = sc
-                best_p = p
-                best_eta = eta
-
-    # 最优参数在完整外层训练集拟合
-    Xall = tr_o[FEATS].astype(float)
-    med = Xall.median()
-    fm = ExtraTreesRegressor(**best_p, random_state=2026 + of, n_jobs=-1)
+    # 最终拟合+预测
+    Xall = tr_o[FEATS].astype(float); med = Xall.median()
+    fm = ExtraTreesRegressor(**ET_PARAMS, random_state=2026 + of, n_jobs=-1)
     fm.fit(Xall.fillna(med).values, tr_o["target"].values)
-
-    # 预测外层测试日
     Xte = te_o[FEATS].astype(float).fillna(med).values
     outer_pred[ote] = fm.predict(Xte)
-    outer_eta[ote] = best_eta
 
     test_date = str(te_o["date"].iloc[0])
-    fold_info.append({
-        "fold": of + 1, "test_date": test_date,
-        "leaf": best_p["min_samples_leaf"], "depth": str(best_p["max_depth"]),
-        "mf": best_p["max_features"], "nest": best_p["n_estimators"],
-        "eta": best_eta, "inner_pass": best_score[0],
-    })
-    print(f"  折{of+1}/{n_dates} 日期={test_date} "
-          f"leaf={best_p['min_samples_leaf']} depth={best_p['max_depth']} "
-          f"mf={best_p['max_features']} nest={best_p['n_estimators']} "
-          f"η={best_eta:.2f} inner_pass={best_score[0]}", flush=True)
+    fold_info.append({"fold": of + 1, "test_date": test_date, "inner_pass": inner_pass})
+    print(f"  折{of+1}/{n_dates} 日期={test_date} inner_pass={inner_pass}", flush=True)
 
-# 应用 η 收缩
-final_vol = df["base_vol"].values * np.exp(outer_pred * outer_eta)
+# η=1.0 固定（η搜索经消融验证无效）
+final_vol = df["base_vol"].values * np.exp(outer_pred)
 final_err = (final_vol - df["standard_volume_m3"].values) / df["standard_volume_m3"].values * 100.0
-
-# η=1.0 无收缩对照
-vol_ns = df["base_vol"].values * np.exp(outer_pred)
-err_ns = (vol_ns - df["standard_volume_m3"].values) / df["standard_volume_m3"].values * 100.0
 
 # ==== 最终评价 ====
 r = ev(final_err)
-r["eta"] = "per_fold"
-r_ns = ev(err_ns)
-r_ns["eta"] = 1.0
-
-print(f"\n=== 最终结果（折内选 η）===")
+print(f"\n=== ET(28d)基线（固定参数，η=1）===")
 print(f"  pass={r['pass']}/{r['total']}  MAE={r['MAE']:.4f}%  "
       f"u_L={r['u_L']:.4f}%  u_r={r['u_r']:.4f}%  u_d={r['u_d']:.4f}%")
-print(f"\n=== η=1.0 对照 ===")
-print(f"  pass={r_ns['pass']}/{r_ns['total']}  MAE={r_ns['MAE']:.4f}%  "
-      f"u_L={r_ns['u_L']:.4f}%  u_r={r_ns['u_r']:.4f}%  u_d={r_ns['u_d']:.4f}%")
 
 # ==== 保存 ====
 assert len(fold_info) == n_dates, f"折数({len(fold_info)})≠日期数({n_dates})"
 assert np.isfinite(outer_pred).all(), "outer_pred 含 NaN/Inf"
-assert np.isfinite(outer_eta).all(), "outer_eta 含 NaN/Inf"
-pd.DataFrame([r, r_ns]).to_csv(OUT_DIR / "final_metrics.csv", index=False, encoding="utf-8-sig")
+pd.DataFrame([r]).to_csv(OUT_DIR / "final_metrics.csv", index=False, encoding="utf-8-sig")
 pd.DataFrame(fold_info).to_csv(OUT_DIR / "fold_details.csv", index=False, encoding="utf-8-sig")
 
 with open(OUT_DIR / "best_result.json", "w", encoding="utf-8") as f:
@@ -196,7 +155,7 @@ pred_df = df[[
 ]].copy()
 pred_df["pred_volume_m3"] = final_vol
 pred_df["error_pct"] = final_err
-pred_df["eta"] = outer_eta
+pred_df["eta"] = 1.0
 pred_df.to_csv(OUT_DIR / "window_predictions.csv", index=False, encoding="utf-8-sig")
 
 print(f"\n输出: {OUT_DIR}")

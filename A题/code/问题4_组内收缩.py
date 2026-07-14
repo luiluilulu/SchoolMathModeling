@@ -1,6 +1,7 @@
 """
-H1 + 组内中位数收缩：对同(date,flow_point)组内的ET残差向组中位数收缩。
-γ由训练集内层LODO选择。嵌套LODO验证。
+最终模型：D0(OWICS+LOFPO) + 扰流(Phys6+固定ET+组内中位数收缩)。
+ET超参固定(leaf=5/depth=6/mf=0.5/nest=200)，仅外层LODO选γ。
+简化自嵌套LODO——消融实验已证明ET超参在本数据上不敏感。
 """
 import pandas as pd, numpy as np, math, json
 from pathlib import Path
@@ -9,7 +10,7 @@ from sklearn.model_selection import LeaveOneGroupOut
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "../problem/attachment1_window_data.csv"
-OUT_DIR = HERE / "../output/results/problem4_shrink"
+OUT_DIR = HERE / "../output/results/final_model"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 AREA = 0.13138219017128852
@@ -22,6 +23,8 @@ FEATS_ET = CHORD_COLS + [f"ab{i}" for i in range(5)] + [
     "dyn_start_over_plateau", "dyn_end_over_plateau", "dyn_plateau_cv", "dyn_active_eq_s",
     "zero_rate_med", "zero_rate_mad", "zero_age_s", "base_rate_m3h", "duration_s", "flow_point",
 ]
+ET_PARAMS = {"min_samples_leaf": 5, "max_depth": 6, "max_features": 0.5, "n_estimators": 200}
+GAMMAS = [0.0, 0.25, 0.5, 0.75]
 
 df = pd.read_csv(DATA, encoding="utf-8-sig")
 dur = df["duration_s"].astype(float).values; ch = df[CHORD_COLS].astype(float).values
@@ -30,10 +33,6 @@ df["v_phys6"] = AREA * dur * (ch @ W_PHYS6)
 df["base_rate_m3h"] = df["v_phys6"] / dur * 3600
 std_vol = df["standard_volume_m3"].astype(float).values
 dates = df["date"].astype(str).values
-
-# D0 LOFPO: 每个LODO折内独立执行。
-# D0仅1个日期，LOFPO(留一流量点)是适当的D0交叉验证。
-# 当D0日期是测试折时，训练集无D0数据，无法校准→退回OWICS裸性能。
 
 def ev(err, df_sub=None):
     w = (df if df_sub is None else df_sub).copy(); w["ep"] = err
@@ -60,6 +59,15 @@ def ev(err, df_sub=None):
     return {"pass": gp, "total": len(gdf), "u_L": float(ul), "u_r": float(ur),
             "u_d": float(ud), "MAE": float(np.abs(err).mean())}
 
+def apply_shrink(r_hat, df_sub, gamma):
+    result = r_hat.copy()
+    for (dt, fp), grp in df_sub.groupby(["date", "flow_point"]):
+        if len(grp) < 2: continue
+        idx = grp.index.values
+        med = np.median(r_hat[idx])
+        result[idx] = (1 - gamma) * r_hat[idx] + gamma * med
+    return result
+
 def inner_score(err, df_sub):
     gp=0; gs=0.0; gm=0.0
     for _, g in df_sub.groupby(["date", "flow_point"]):
@@ -69,20 +77,7 @@ def inner_score(err, df_sub):
         gs = max(gs, ee.std(ddof=1)); gm = max(gm, abs(ee.mean()))
     return (gp, -gs, -gm)
 
-def apply_shrink(r_hat, df_sub, gamma):
-    """对df_sub中每组(date,flow_point)的r_hat做中位数收缩。"""
-    result = r_hat.copy()
-    for (dt, fp), grp in df_sub.groupby(["date", "flow_point"]):
-        if len(grp) < 2: continue
-        idx = grp.index.values
-        med = np.median(r_hat[idx])
-        result[idx] = (1 - gamma) * r_hat[idx] + gamma * med
-    return result
-
-ET_PG = [{"min_samples_leaf": l, "max_depth": d, "max_features": m, "n_estimators": n}
-         for l in [3, 5] for d in [4, 6, None] for m in [0.3, 0.5] for n in [200]]
-GAMMAS = [0.0, 0.25, 0.5, 0.75]
-
+# ==== 外层LODO（固定ET，仅选γ）====
 outer = LeaveOneGroupOut()
 outer_pred = np.zeros(len(df))
 fold_gammas = []
@@ -93,105 +88,68 @@ for of, (otr, ote) in enumerate(outer.split(df, groups=dates)):
     idates = tr_o["date"].astype(str).values
     inner = LeaveOneGroupOut()
 
-    # 折内D0 LOFPO校准（仅用训练集D0数据）
+    # 折内D0 LOFPO
     d0_tr = tr_o[tr_o["disturbance_id"] == "D0"]
-    if len(d0_tr) >= 4:
-        fps_tr = sorted(d0_tr["flow_point"].unique())
-        d0_preds_fold = np.zeros(len(te_o))
-        # 全局LOFPO（训练集D0上做留一流量点），用于D0测试窗口
-        # 当测试集含D0时应用
-    else:
-        d0_preds_fold = None  # 训练集无D0，退回OWICS裸性能
 
-    # ET选参
-    best_is = (-1, -np.inf, -np.inf); best_p = None
-    for p in ET_PG:
-        ip = np.zeros(len(tr_o))
-        for itr, iva in inner.split(tr_o, groups=idates):
-            tri = tr_o.iloc[itr]; vai = tr_o.iloc[iva]
-            Xtr_f = tri[FEATS_ET].astype(float).fillna(tri[FEATS_ET].median()).values
-            Xva_f = vai[FEATS_ET].astype(float).fillna(tri[FEATS_ET].median()).values
-            r_tr = np.log(tri["standard_volume_m3"].values / tri["v_phys6"].values)
-            et = ExtraTreesRegressor(**p, random_state=2026, n_jobs=-1)
-            et.fit(Xtr_f, r_tr)
-            ip[iva] = et.predict(Xva_f)
-        vol = tr_o["v_phys6"].values * np.exp(ip)
-        err = (vol - tr_o["standard_volume_m3"].values) / tr_o["standard_volume_m3"].values * 100
-        iscore = inner_score(err, tr_o)
-        if iscore > best_is: best_is = iscore; best_p = p
-
-    # 最优ET重跑内层LODO获取ip_best，用于γ选择
-    ip_best = np.zeros(len(tr_o))
+    # ET固定参数拟合+内层LODO获取OOF预测
+    ip_oof = np.zeros(len(tr_o))
     for itr, iva in inner.split(tr_o, groups=idates):
         tri = tr_o.iloc[itr]; vai = tr_o.iloc[iva]
         Xtr_f = tri[FEATS_ET].astype(float).fillna(tri[FEATS_ET].median()).values
         Xva_f = vai[FEATS_ET].astype(float).fillna(tri[FEATS_ET].median()).values
-        et = ExtraTreesRegressor(**best_p, random_state=2026, n_jobs=-1)
+        et = ExtraTreesRegressor(**ET_PARAMS, random_state=2026, n_jobs=-1)
         et.fit(Xtr_f, np.log(tri["standard_volume_m3"].values / tri["v_phys6"].values))
-        ip_best[iva] = et.predict(Xva_f)
+        ip_oof[iva] = et.predict(Xva_f)
 
-    # γ选择（内层LODO + 训练集评价）
-    best_gamma = 0.0; best_g_score = (np.inf, np.inf, -np.inf, np.inf)
+    # γ选择：内层OOF上仅选γ
+    best_gamma = 0.0; best_gs = (np.inf, np.inf, -np.inf, np.inf)
     for gamma in GAMMAS:
-        ip_shrunk = apply_shrink(ip_best, tr_o, gamma)
+        ip_shrunk = apply_shrink(ip_oof, tr_o, gamma)
         vol = tr_o["v_phys6"].values * np.exp(ip_shrunk)
         err = (vol - tr_o["standard_volume_m3"].values) / tr_o["standard_volume_m3"].values * 100
         m_inner = ev(err, tr_o)
         sc = (m_inner["u_r"] / 0.040, m_inner["u_d"] / 0.115 if m_inner["u_d"] > 0 else 0,
               -m_inner["pass"], m_inner["MAE"])
-        if sc < best_g_score: best_g_score = sc; best_gamma = gamma
+        if sc < best_gs: best_gs = sc; best_gamma = gamma
 
     # 最终拟合+预测
     Xall = tr_o[FEATS_ET].astype(float).fillna(tr_o[FEATS_ET].median()).values
     Xte = te_o[FEATS_ET].astype(float).fillna(tr_o[FEATS_ET].median()).values
-    r_tr = np.log(tr_o["standard_volume_m3"].values / tr_o["v_phys6"].values)
-    et_final = ExtraTreesRegressor(**best_p, random_state=2026 + of, n_jobs=-1)
-    et_final.fit(Xall, r_tr)
-    r_te = et_final.predict(Xte)
+    et = ExtraTreesRegressor(**ET_PARAMS, random_state=2026 + of, n_jobs=-1)
+    et.fit(Xall, np.log(tr_o["standard_volume_m3"].values / tr_o["v_phys6"].values))
+    r_te = et.predict(Xte)
     r_te_shrunk = apply_shrink(r_te, te_o, best_gamma)
 
     te_pred = np.zeros(len(te_o))
     te_d0 = te_o["disturbance_id"] == "D0"
     if te_d0.sum() > 0:
-        if d0_preds_fold is not None:
-            # 折内LOFPO校准: 用训练集D0拟合，预测测试集D0
+        if len(d0_tr) >= 4:
             for fp_te in sorted(te_o.loc[te_d0, "flow_point"].unique()):
                 fp_mask = (te_o["flow_point"] == fp_te) & te_d0
                 z_val = (fp_te - 50) / 30
-                # 训练集该fp不存在时用最近fp
-                z_tr_fold = (d0_tr["flow_point"].values - 50) / 30
-                y_tr_fold = np.log(d0_tr["standard_volume_m3"].values / d0_tr["v_owics"].values)
-                a, b = np.polyfit(z_tr_fold, y_tr_fold, 1)
+                z_tr = (d0_tr["flow_point"].values - 50) / 30
+                y_tr = np.log(d0_tr["standard_volume_m3"].values / d0_tr["v_owics"].values)
+                a, b = np.polyfit(z_tr, y_tr, 1)
                 te_pred[fp_mask] = te_o.loc[fp_mask, "v_owics"].values * np.exp(a * z_val + b)
         else:
-            # 训练集无D0: 无法校准，用裸OWICS
             te_pred[te_d0] = te_o.loc[te_d0, "v_owics"].values
     te_pred[~te_d0] = te_o.loc[~te_d0, "v_phys6"].values * np.exp(r_te_shrunk[~te_d0])
     outer_pred[ote] = te_pred
 
     fold_gammas.append(best_gamma)
     test_date = str(df.iloc[ote[0]]["date"])
-    mixed_sds = []
-    for (dt, fp), grp in te_o.groupby(["date", "flow_point"]):
-        if len(grp) < 3 or grp["disturbance_id"].nunique() < 2: continue
-        idx = grp.index.values
-        e = (te_pred[idx] - te_o.loc[idx, "standard_volume_m3"].values) / te_o.loc[idx, "standard_volume_m3"].values * 100
-        mixed_sds.append(e.std(ddof=1))
-    max_mix = max(mixed_sds) if mixed_sds else 0
-    print(f"  折{of+1}/{len(set(dates))} 日期={test_date} γ={best_gamma:.2f} max_mixed_SD={max_mix:.4f}%", flush=True)
+    print(f"  折{of+1}/{len(set(dates))} 日期={test_date} γ={best_gamma:.2f}", flush=True)
 
 final_err = (outer_pred - std_vol) / std_vol * 100
 m = ev(final_err)
 e_p = (df["v_phys6"].values - std_vol) / std_vol * 100; m_p = ev(e_p)
 
-print(f"\n{'='*55}")
-print(f"               Pass    MAE       u_L       u_r       u_d")
-print(f"Phys6          {m_p['pass']}/30    {m_p['MAE']:.4f}%    {m_p['u_L']:.4f}%    {m_p['u_r']:.4f}%    {m_p['u_d']:.4f}%")
-print(f"H1(之前)       9/30    0.1087%   0.0330%   0.1179%   0.2457%")
-print(f"H1+组内收缩    {m['pass']}/30    {m['MAE']:.4f}%    {m['u_L']:.4f}%    {m['u_r']:.4f}%    {m['u_d']:.4f}%")
-print(f"选用γ: {dict(zip(*np.unique(fold_gammas,return_counts=True)))}")
+print(f"\n最终模型 (固定ET + LODO选γ)")
+print(f"  Phys6: pass={m_p['pass']}/30 u_L={m_p['u_L']:.4f}% u_r={m_p['u_r']:.4f}% u_d={m_p['u_d']:.4f}% MAE={m_p['MAE']:.4f}%")
+print(f"  本模型: pass={m['pass']}/30 u_L={m['u_L']:.4f}% u_r={m['u_r']:.4f}% u_d={m['u_d']:.4f}% MAE={m['MAE']:.4f}%")
+print(f"  γ分布: {dict(zip(*np.unique(fold_gammas, return_counts=True)))}")
 
-pd.DataFrame([{"model":"phys6",**m_p},{"model":"h1_shrink",**m}]).to_csv(
-    OUT_DIR / "comparison.csv", index=False, encoding="utf-8-sig")
-with open(OUT_DIR / "summary.json","w",encoding="utf-8") as f: json.dump(m,f,ensure_ascii=False,indent=2)
+pd.DataFrame([{"model":"phys6",**m_p},{"model":"final",**m}]).to_csv(
+    OUT_DIR / "final_result.csv", index=False, encoding="utf-8-sig")
+with open(OUT_DIR / "summary.json","w",encoding="utf-8") as f: json.dump(m, f, ensure_ascii=False, indent=2)
 print(f"输出: {OUT_DIR}")
