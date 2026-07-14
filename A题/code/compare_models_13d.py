@@ -11,6 +11,7 @@ from sklearn.linear_model import Ridge
 from sklearn.svm import SVR
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import LeaveOneGroupOut
+from utils.metrics import evaluate as ev, inner_score
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "../problem/attachment1_window_data.csv"
@@ -38,53 +39,7 @@ dates = df["date"].astype(str).values
 n_dates = df["date"].astype(str).nunique()
 
 
-def ev(err):
-    """完整官方指标。"""
-    work = df.copy()
-    work["ep"] = err
-    gd = []
-    for _, grp in work.groupby(["date", "flow_point"]):
-        if len(grp) < 3:
-            continue
-        ee = grp["ep"].values
-        gd.append({"m": ee.mean(), "s": ee.std(ddof=1)})
-    gdf = pd.DataFrame(gd)
-    gp = int(((gdf["m"].abs() <= 0.2) & (gdf["s"] <= 0.040)).sum()) if not gdf.empty else 0
-    d0 = work[work["disturbance_id"] == "D0"]
-    d0m = d0.groupby("flow_point")["ep"].mean()
-    ul = math.sqrt((d0m ** 2).sum() / max(len(d0m) - 1, 1))
-    ur = gdf["s"].max() if not gdf.empty else 0.0
-    use = work[work["flow_point"].between(40, 100)]
-    bm = use[use["condition_note"].eq("no_disturbance_reference")].groupby("flow_point")["ep"].mean()
-    d1 = use[use["condition_note"].eq("disturbed_test")].groupby(
-        ["disturbance_id", "flow_point"]
-    )["ep"].agg(["mean", "std"]).reset_index()
-    d1["bm"] = d1["flow_point"].map(bm)
-    d1 = d1.dropna(subset=["bm"])
-    d1["drift"] = (d1["bm"] - d1["mean"]).abs()
-    udc = d1["drift"].max() / math.sqrt(3)
-    udr = d1["std"].fillna(0).max()
-    ud = math.sqrt(udc ** 2 + udr ** 2)
-    return {
-        "MAE": float(np.abs(err).mean()), "pass": gp, "total": len(gdf),
-        "u_L": float(ul), "u_r": float(ur), "u_d": float(ud),
-    }
 
-
-def inner_score(err, df_sub):
-    """内层评分：(组通过数, -max_SD, -max_|mean|)。"""
-    gp = 0
-    gs = 0.0
-    gm = 0.0
-    for _, g in df_sub.groupby(["date", "flow_point"]):
-        if len(g) < 3:
-            continue
-        ee = err[g.index]
-        if abs(ee.mean()) <= 0.2 and ee.std(ddof=1) <= 0.040:
-            gp += 1
-        gs = max(gs, ee.std(ddof=1))
-        gm = max(gm, abs(ee.mean()))
-    return (gp, -gs, -gm)
 
 
 # ---- 参数网格 ----
@@ -268,7 +223,7 @@ for name in ["ridge", "svr", "gbrt", "et"]:
     print(f"模型: {name} (13维特征)")
     print(f"{'='*50}", flush=True)
     pred, err = run_nested_lodo(name)
-    r = ev(err)
+    r = ev(err, df)
     r["model"] = name
     results[name] = {"metrics": r, "pred": pred, "err": err}
     print(f"  => pass={r['pass']}/{r['total']} MAE={r['MAE']:.4f}% "
@@ -277,7 +232,7 @@ for name in ["ridge", "svr", "gbrt", "et"]:
 # Phys6基线
 v_phys6 = df["base_vol"].values
 e_phys6 = (v_phys6 - df["standard_volume_m3"].values) / df["standard_volume_m3"].values * 100.0
-r_phys6 = ev(e_phys6)
+r_phys6 = ev(e_phys6, df)
 r_phys6["model"] = "phys6"
 results["phys6"] = {"metrics": r_phys6, "err": e_phys6}
 

@@ -1,7 +1,7 @@
 """问题2：无扰流条件下的多声道流量估计模型。
 
 求解方法：拉格朗日基函数 × Gauss-Jacobi 权函数积分 → OWICS权重。
-         叠加壁面边界层修正（权重不归一，取 Phys6）→ 零参数物理模型。
+         零参数物理模型，权重由数学推导确定，不从数据拟合。
 输出：output/results/problem2_results.csv, output/figures/problem2_comparison.png
 """
 
@@ -159,8 +159,8 @@ def main():
     if diff < 1e-5:
         print("  [OK] 推导正确，与 OWICS 一致")
 
-    # 选择 Phys6 作为最终模型（工程修正后）
-    weights = phys6_w
+    # OWICS：基于实际声道位置的加权 Lagrange 插值积分（权重和 1.0）
+    weights = owics_w
     pred = predict(df, weights)
     mae, groups = evaluate(df, pred)
     result = df.assign(model_volume_m3=pred, error_pct=
@@ -170,12 +170,32 @@ def main():
     d0_pred = predict(d0, weights)
     d0_mae = np.abs((d0_pred-d0["standard_volume_m3"])/d0["standard_volume_m3"]*100).mean()
 
-    print(f"\n最终模型 (Phys6 工程修正):")
+    print(f"\n最终模型 (OWICS):")
     print(f"  无扰流 D0 MAE: {d0_mae:.4f}%")
     print(f"  全量 MAE: {mae:.4f}%")
+    # D0分组评价
+    d0_result = df[df["disturbance_id"] == "D0"].assign(
+        model_volume_m3=d0_pred,
+        error_pct=(d0_pred - df[df["disturbance_id"] == "D0"]["standard_volume_m3"])
+                  / df[df["disturbance_id"] == "D0"]["standard_volume_m3"] * 100)
+    for (dt, fp), grp in d0_result.groupby(["date", "flow_point"]):
+        if len(grp) >= 3:
+            e = grp["error_pct"]
+            print(f"  D0 {dt} fp={fp} n={len(grp)}: mean={e.mean():.4f}% SD={e.std(ddof=1):.4f}%")
     if not groups.empty:
         n_pass = groups["pass_group"].sum()
         print(f"  组通过: {n_pass}/{len(groups)}")
+
+    # D0四种权重对比（OWICS/Phys6自行计算，Lagrange/等权直接用附件1预计算值）
+    print(f"\nD0无扰流四种权重对比（10窗口）:")
+    print(f"  {'权重':12s} {'MAE':>8s} {'偏差':>8s} {'SD':>8s}")
+    for label, w in [("OWICS", owics_w), ("Phys6", phys6_w)]:
+        p = predict(d0, w)
+        e = (p - d0["standard_volume_m3"]) / d0["standard_volume_m3"] * 100
+        print(f"  {label:12s} {e.abs().mean():7.4f}% {e.mean():7.4f}% {e.std(ddof=1):7.4f}%")
+    for label, col in [("Lagrange", "lagrange_volume_m3"), ("等权", "equal_weight_volume_m3")]:
+        e = (d0[col] - d0["standard_volume_m3"]) / d0["standard_volume_m3"] * 100
+        print(f"  {label:12s} {e.abs().mean():7.4f}% {e.mean():7.4f}% {e.std(ddof=1):7.4f}%")
 
     result[["window_id", "model_volume_m3"]].to_csv(
         RESULTS_DIR / "problem2_results.csv", index=False, encoding="utf-8-sig")

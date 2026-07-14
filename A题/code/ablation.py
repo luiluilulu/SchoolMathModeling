@@ -6,6 +6,7 @@ import pandas as pd, numpy as np, math, json
 from pathlib import Path
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.model_selection import LeaveOneGroupOut
+from utils.metrics import inner_score
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "../problem/attachment1_window_data.csv"
@@ -105,20 +106,7 @@ def ev(err):
     }
 
 
-def inner_score(err, df_sub):
-    """内层评分。"""
-    gp = 0
-    gs = 0.0
-    gm = 0.0
-    for _, g in df_sub.groupby(["date", "flow_point"]):
-        if len(g) < 3:
-            continue
-        ee = err[g.index]
-        if abs(ee.mean()) <= 0.2 and ee.std(ddof=1) <= 0.040:
-            gp += 1
-        gs = max(gs, ee.std(ddof=1))
-        gm = max(gm, abs(ee.mean()))
-    return (gp, -gs, -gm)
+
 
 
 def run_ablation(name, feat_cols):

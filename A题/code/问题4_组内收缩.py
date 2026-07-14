@@ -3,10 +3,11 @@
 ET超参固定(leaf=5/depth=6/mf=0.5/nest=200)，仅外层LODO选γ。
 简化自嵌套LODO——消融实验已证明ET超参在本数据上不敏感。
 """
-import pandas as pd, numpy as np, math, json
+import pandas as pd, numpy as np, json
 from pathlib import Path
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.model_selection import LeaveOneGroupOut
+from utils.metrics import evaluate as ev, inner_score
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "../problem/attachment1_window_data.csv"
@@ -34,31 +35,6 @@ df["base_rate_m3h"] = df["v_phys6"] / dur * 3600
 std_vol = df["standard_volume_m3"].astype(float).values
 dates = df["date"].astype(str).values
 
-def ev(err, df_sub=None):
-    w = (df if df_sub is None else df_sub).copy(); w["ep"] = err
-    gd = []
-    for _, grp in w.groupby(["date", "flow_point"]):
-        if len(grp) < 3: continue
-        ee = grp["ep"].values; gd.append({"m": ee.mean(), "s": ee.std(ddof=1)})
-    gdf = pd.DataFrame(gd)
-    gp = int(((gdf["m"].abs() <= 0.2) & (gdf["s"] <= 0.040)).sum()) if not gdf.empty else 0
-    d0w = w[w["disturbance_id"] == "D0"]
-    d0m = d0w.groupby("flow_point")["ep"].mean() if len(d0w) > 0 else pd.Series(dtype=float)
-    ul = math.sqrt((d0m**2).sum() / max(len(d0m) - 1, 1)) if len(d0m) > 1 else 0.0
-    ur = gdf["s"].max() if not gdf.empty else 0.0
-    use = w[w["flow_point"].between(40, 100)]
-    bm = use[use["condition_note"].eq("no_disturbance_reference")]
-    dt = use[use["condition_note"].eq("disturbed_test")]
-    if len(bm) > 0 and len(dt) > 0:
-        bmm = bm.groupby("flow_point")["ep"].mean()
-        d1 = dt.groupby(["disturbance_id", "flow_point"])["ep"].agg(["mean", "std"]).reset_index()
-        d1["bm"] = d1["flow_point"].map(bmm); d1 = d1.dropna(subset=["bm"])
-        d1["drift"] = (d1["bm"] - d1["mean"]).abs()
-        ud = math.sqrt((d1["drift"].max() / math.sqrt(3))**2 + d1["std"].fillna(0).max()**2)
-    else: ud = 0.0
-    return {"pass": gp, "total": len(gdf), "u_L": float(ul), "u_r": float(ur),
-            "u_d": float(ud), "MAE": float(np.abs(err).mean())}
-
 def apply_shrink(r_hat, df_sub, gamma):
     result = r_hat.copy()
     for (dt, fp), grp in df_sub.groupby(["date", "flow_point"]):
@@ -67,15 +43,6 @@ def apply_shrink(r_hat, df_sub, gamma):
         med = np.median(r_hat[idx])
         result[idx] = (1 - gamma) * r_hat[idx] + gamma * med
     return result
-
-def inner_score(err, df_sub):
-    gp=0; gs=0.0; gm=0.0
-    for _, g in df_sub.groupby(["date", "flow_point"]):
-        if len(g) < 3: continue
-        ee = err[g.index]
-        if abs(ee.mean()) <= 0.2 and ee.std(ddof=1) <= 0.040: gp += 1
-        gs = max(gs, ee.std(ddof=1)); gm = max(gm, abs(ee.mean()))
-    return (gp, -gs, -gm)
 
 # ==== 外层LODO（固定ET，仅选γ）====
 outer = LeaveOneGroupOut()
@@ -141,8 +108,8 @@ for of, (otr, ote) in enumerate(outer.split(df, groups=dates)):
     print(f"  折{of+1}/{len(set(dates))} 日期={test_date} γ={best_gamma:.2f}", flush=True)
 
 final_err = (outer_pred - std_vol) / std_vol * 100
-m = ev(final_err)
-e_p = (df["v_phys6"].values - std_vol) / std_vol * 100; m_p = ev(e_p)
+m = ev(final_err, df)
+e_p = (df["v_phys6"].values - std_vol) / std_vol * 100; m_p = ev(e_p, df)
 
 print(f"\n最终模型 (固定ET + LODO选γ)")
 print(f"  Phys6: pass={m_p['pass']}/30 u_L={m_p['u_L']:.4f}% u_r={m_p['u_r']:.4f}% u_d={m_p['u_d']:.4f}% MAE={m_p['MAE']:.4f}%")
