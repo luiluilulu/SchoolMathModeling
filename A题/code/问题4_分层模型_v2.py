@@ -119,9 +119,7 @@ def d0_lofpo_calibration():
             best_ul = ul; best_method = method
     return best_method, all_preds[best_method], best_ul
 
-best_d0_method, d0_preds_lofpo, d0_ul_lofpo = d0_lofpo_calibration()
-d0_log_correction = d0_preds_lofpo  # log(V_std/V_owics) prediction for each D0 window
-print(f"D0 LOFPO: 最优方法={best_d0_method} u_L={d0_ul_lofpo:.4f}%")
+# D0 LOFPO校准在每个LODO折内独立执行（见run_h_model）
 
 # ---- 聚类连续特征构造 ----
 def build_cluster_features(train_df):
@@ -258,12 +256,17 @@ def run_h_model(name, use_d0_cal, use_cluster_feats, use_ab_trend):
         te_pred = np.zeros(len(te_o))
         te_d0 = te_o["disturbance_id"] == "D0"
         te_dist_idx2 = np.where(~te_d0.values)[0]
-        if te_d0.sum() > 0 and use_d0_cal:
-            # 使用LOFPO校准参数（全量D0拟合）+ 当前折训练集的D0数据
-            # LOFPO校准已在全局层面完成，直接应用
-            te_pred[te_d0] = te_o.loc[te_d0, "v_owics"].values * np.exp(
-                d0_preds_lofpo[df.index.get_indexer(te_o[te_d0].index)]
-            )
+        # 折内D0 LOFPO校准
+        d0_tr_fold = tr_o[tr_o["disturbance_id"] == "D0"]
+        if te_d0.sum() > 0 and use_d0_cal and len(d0_tr_fold) >= 4:
+            # 训练集有D0 → LOFPO校准
+            for fp_te in sorted(te_o.loc[te_d0, "flow_point"].unique()):
+                fp_mask = (te_o["flow_point"] == fp_te) & te_d0
+                z_val = (fp_te - 50) / 30
+                z_tr = (d0_tr_fold["flow_point"].values - 50) / 30
+                y_tr = np.log(d0_tr_fold["standard_volume_m3"].values / d0_tr_fold["v_owics"].values)
+                a, b = np.polyfit(z_tr, y_tr, 1)
+                te_pred[fp_mask] = te_o.loc[fp_mask, "v_owics"].values * np.exp(a * z_val + b)
         elif te_d0.sum() > 0:
             te_pred[te_d0] = te_o.loc[te_d0, "v_owics"].values
         if len(te_dist_idx2) > 0:

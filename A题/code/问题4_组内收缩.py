@@ -31,16 +31,9 @@ df["base_rate_m3h"] = df["v_phys6"] / dur * 3600
 std_vol = df["standard_volume_m3"].astype(float).values
 dates = df["date"].astype(str).values
 
-# D0 LOFPO
-d0_df = df[df["disturbance_id"] == "D0"].copy()
-fps = sorted(d0_df["flow_point"].unique())
-d0_preds = np.zeros(len(d0_df))
-for fp in fps:
-    tr = d0_df["flow_point"] != fp; te = d0_df["flow_point"] == fp
-    z_tr = (d0_df.loc[tr, "flow_point"].values - 50) / 30
-    y_tr = np.log(d0_df.loc[tr, "standard_volume_m3"].values / d0_df.loc[tr, "v_owics"].values)
-    z_te = (d0_df.loc[te, "flow_point"].values - 50) / 30
-    d0_preds[te.values] = np.polyval(np.polyfit(z_tr, y_tr, 1), z_te)
+# D0 LOFPO: 每个LODO折内独立执行。
+# D0仅1个日期，LOFPO(留一流量点)是适当的D0交叉验证。
+# 当D0日期是测试折时，训练集无D0数据，无法校准→退回OWICS裸性能。
 
 def ev(err, df_sub=None):
     w = (df if df_sub is None else df_sub).copy(); w["ep"] = err
@@ -100,6 +93,16 @@ for of, (otr, ote) in enumerate(outer.split(df, groups=dates)):
     idates = tr_o["date"].astype(str).values
     inner = LeaveOneGroupOut()
 
+    # 折内D0 LOFPO校准（仅用训练集D0数据）
+    d0_tr = tr_o[tr_o["disturbance_id"] == "D0"]
+    if len(d0_tr) >= 4:
+        fps_tr = sorted(d0_tr["flow_point"].unique())
+        d0_preds_fold = np.zeros(len(te_o))
+        # 全局LOFPO（训练集D0上做留一流量点），用于D0测试窗口
+        # 当测试集含D0时应用
+    else:
+        d0_preds_fold = None  # 训练集无D0，退回OWICS裸性能
+
     # ET选参
     best_is = (-1, -np.inf, -np.inf); best_p = None
     for p in ET_PG:
@@ -150,8 +153,19 @@ for of, (otr, ote) in enumerate(outer.split(df, groups=dates)):
     te_pred = np.zeros(len(te_o))
     te_d0 = te_o["disturbance_id"] == "D0"
     if te_d0.sum() > 0:
-        te_pred[te_d0] = te_o.loc[te_d0, "v_owics"].values * np.exp(
-            d0_preds[df.index.get_indexer(te_o[te_d0].index)])
+        if d0_preds_fold is not None:
+            # 折内LOFPO校准: 用训练集D0拟合，预测测试集D0
+            for fp_te in sorted(te_o.loc[te_d0, "flow_point"].unique()):
+                fp_mask = (te_o["flow_point"] == fp_te) & te_d0
+                z_val = (fp_te - 50) / 30
+                # 训练集该fp不存在时用最近fp
+                z_tr_fold = (d0_tr["flow_point"].values - 50) / 30
+                y_tr_fold = np.log(d0_tr["standard_volume_m3"].values / d0_tr["v_owics"].values)
+                a, b = np.polyfit(z_tr_fold, y_tr_fold, 1)
+                te_pred[fp_mask] = te_o.loc[fp_mask, "v_owics"].values * np.exp(a * z_val + b)
+        else:
+            # 训练集无D0: 无法校准，用裸OWICS
+            te_pred[te_d0] = te_o.loc[te_d0, "v_owics"].values
     te_pred[~te_d0] = te_o.loc[~te_d0, "v_phys6"].values * np.exp(r_te_shrunk[~te_d0])
     outer_pred[ote] = te_pred
 
