@@ -82,7 +82,7 @@ v = \frac{L}{2\cos\theta} \cdot \frac{\Delta t}{t_+ \cdot t_-}
 \label{eq:velocity_exact}
 \end{equation}
 
-式(\ref{eq:velocity_exact})不含声速$c$，不受水温影响。本题中等效$\cos\theta = 1/\sqrt{2}$（附件7给出的投影因子，对应等效45$^\circ$安装角）。
+在声速沿声路近似均匀且顺逆流共享相同声速的条件下，式(\ref{eq:velocity_exact})显式消去了声速$c$，可显著降低均匀水温变化引起的声速变化影响。本题等效$\cos\theta = 1/\sqrt{2}$（附件7给出的投影因子，对应等效45$^\circ$安装角）。
 
 窗口持续$T$秒，面平均流速$v$，截面积$A$，体积为：
 
@@ -134,7 +134,7 @@ w_i = \frac{2^{\alpha+\beta+1}\;\Gamma(N+\alpha+1)\;\Gamma(N+\beta+1)}{N!\;\Gamm
 \label{eq:gj_weights}
 \end{equation}
 
-本题$N=5$，代入$\alpha=\beta=1/2$求解$P_5^{(1/2,1/2)}(t)=0$，得五条声道归一化高度$t = 0, \pm 0.266, \pm 0.727$（与附件7中声道位置参数一致）。将节点代入式(\ref{eq:gj_weights})得到权重。最终体积估计为五声道离散加权和：
+标准五点Gauss-Jacobi求积（$\alpha=\beta=1/2$）的节点为$t = 0, \pm 0.500, \pm 0.866$，归一化权重和为1.0。但本题仪表实际声道位置为$t = 0, \pm 0.266, \pm 0.727$（附件7），与标准节点不同。因此实际求解是在给定声道位置上通过加权Lagrange插值积分（式(\ref{eq:lagrange_integral})）得到OWICS权重，再经由附件7的工程修正获得Phys6权重。最终体积估计为五声道离散加权和：
 
 \begin{equation}
 V = A \cdot T \cdot \sum_{i=0}^{4} w_i \cdot \text{chord}_i
@@ -186,4 +186,4 @@ Lagrange & Lagrange-type Integration & 1.000 & 插值型积分 \\
 \end{tabular}
 \end{table}
 
-其中Phys6为工程上实际使用的物理权重，来源于Gauss-Jacobi积分但未经归一化处理；OWICS为标准Gauss-Jacobi积分（归一化形式）；Lagrange为拉格朗日插值型积分；等权为最简单的算术平均，仅作为对照基线。
+其中Phys6为附件7提供的工程修正系数（权重和0.993），在OWICS积分模型基础上引入工程修正，附件未公开其完整推导依据；OWICS由实际声道位置上的Lagrange插值积分推导（权重和1.0），与附件7中weight\_owics列一致（偏差$<10^{-5}$）；Lagrange为另一类插值型积分；等权为简单算术平均，仅作对照基线。
